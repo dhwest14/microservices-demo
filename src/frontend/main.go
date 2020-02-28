@@ -15,6 +15,12 @@
 package main
 
 import (
+	"github.com/sirupsen/logrus"
+	"github.com/newrelic/go-agent/v3/newrelic"
+	"github.com/newrelic/go-agent/v3/integrations/logcontext/nrlogrusplugin"
+	"github.com/newrelic/go-agent/v3/integrations/nrgorilla"
+	// "github.com/newrelic/go-agent/v3/integrations/nrgrpc"
+
 	"context"
 	"fmt"
 	"net/http"
@@ -25,7 +31,6 @@ import (
 	"contrib.go.opencensus.io/exporter/stackdriver"
 	"github.com/gorilla/mux"
 	"github.com/pkg/errors"
-	"github.com/sirupsen/logrus"
 	"go.opencensus.io/exporter/jaeger"
 	"go.opencensus.io/plugin/ocgrpc"
 	"go.opencensus.io/plugin/ochttp"
@@ -80,18 +85,30 @@ type frontendServer struct {
 	adSvcConn *grpc.ClientConn
 }
 
+var app *newrelic.Application
+
 func main() {
+	app, _ = newrelic.NewApplication(
+		func(config *newrelic.Config) {
+			// add more specific configuration of the agent within a custom ConfigOption
+			config.CrossApplicationTracer.Enabled = false
+			config.DistributedTracer.Enabled = true
+		},
+		newrelic.ConfigAppName(os.Getenv("NEW_RELIC_APP_NAME")),
+		newrelic.ConfigLicense(os.Getenv("NEW_RELIC_LICENSE_KEY")))
+
 	ctx := context.Background()
 	log := logrus.New()
 	log.Level = logrus.DebugLevel
-	log.Formatter = &logrus.JSONFormatter{
-		FieldMap: logrus.FieldMap{
-			logrus.FieldKeyTime:  "timestamp",
-			logrus.FieldKeyLevel: "severity",
-			logrus.FieldKeyMsg:   "message",
-		},
-		TimestampFormat: time.RFC3339Nano,
-	}
+	// log.Formatter = &logrus.JSONFormatter{
+	// 	FieldMap: logrus.FieldMap{
+	// 		logrus.FieldKeyTime:  "timestamp",
+	// 		logrus.FieldKeyLevel: "severity",
+	// 		logrus.FieldKeyMsg:   "message",
+	// 	},
+	// 	TimestampFormat: time.RFC3339Nano,
+	// }
+	log.SetFormatter(nrlogrusplugin.ContextFormatter{})
 	log.Out = os.Stdout
 
 	if os.Getenv("DISABLE_TRACING") == "" {
@@ -131,6 +148,7 @@ func main() {
 	mustConnGRPC(ctx, &svc.adSvcConn, svc.adSvcAddr)
 
 	r := mux.NewRouter()
+	r.Use(nrgorilla.Middleware(app))
 	r.HandleFunc("/", svc.homeHandler).Methods(http.MethodGet, http.MethodHead)
 	r.HandleFunc("/product/{id}", svc.productHandler).Methods(http.MethodGet, http.MethodHead)
 	r.HandleFunc("/cart", svc.viewCartHandler).Methods(http.MethodGet, http.MethodHead)

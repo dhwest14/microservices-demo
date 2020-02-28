@@ -22,7 +22,7 @@
                             </p>
                             <hr/>
 
-                            <form method="POST" action="/cart" class="form-inline text-muted">
+                            <form method="POST" action="/cart" class="form-inline text-muted" onsubmit="newrelic.addPageAction('Product Added To Cart', {'product': '{{$.product.Item.Name}}', 'amount': '{{.product.Price}}'})">
                                 <input type="hidden" name="product_id" value="{{$.product.Item.Id}}"/>
                                 <div class="input-group">
                                     <div class="input-group-prepend">
