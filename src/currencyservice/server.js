@@ -14,6 +14,8 @@
  * limitations under the License.
  */
 
+const newrelic = require('newrelic');
+
 if(process.env.DISABLE_PROFILER) {
   console.log("Profiler disabled.")
 }
@@ -110,9 +112,11 @@ function _carry (amount) {
  * Lists the supported currencies
  */
 function getSupportedCurrencies (call, callback) {
-  logger.info('Getting supported currencies...');
-  _getCurrencyData((data) => {
-    callback(null, {currency_codes: Object.keys(data)});
+  newrelic.startWebTransaction('GetSupportedCurrencies', function() {
+    logger.info('Getting supported currencies...');
+    _getCurrencyData((data) => {
+      callback(null, {currency_codes: Object.keys(data)});
+    });
   });
 }
 
@@ -120,44 +124,56 @@ function getSupportedCurrencies (call, callback) {
  * Converts between currencies
  */
 function convert (call, callback) {
+  newrelic.startWebTransaction('Convert', function() {
   logger.info('received conversion request');
-  try {
-    _getCurrencyData((data) => {
-      const request = call.request;
+    try {
+      _getCurrencyData((data) => {
+        const request = call.request;
 
-      // Convert: from_currency --> EUR
-      const from = request.from;
-      const euros = _carry({
-        units: from.units / data[from.currency_code],
-        nanos: from.nanos / data[from.currency_code]
+        // Convert: from_currency --> EUR
+        const from = request.from;
+        const euros = _carry({
+          units: from.units / data[from.currency_code],
+          nanos: from.nanos / data[from.currency_code]
+        });
+
+        euros.nanos = Math.round(euros.nanos);
+
+        // Convert: EUR --> to_currency
+        const result = _carry({
+          units: euros.units * data[request.to_code],
+          nanos: euros.nanos * data[request.to_code]
+        });
+
+        result.units = Math.floor(result.units);
+        result.nanos = Math.floor(result.nanos);
+        result.currency_code = request.to_code;
+
+        // sample business data collected with New Relic API
+        newrelic.recordCustomEvent('CurrencyConversion', {
+          "currencyFrom": request.from,
+          "currencyTo": request.to_code,
+          "amountEuros": euros.units,
+          "amount": result.units
+        });
+
+        logger.info(`conversion request successful`);
+        callback(null, result);
       });
-
-      euros.nanos = Math.round(euros.nanos);
-
-      // Convert: EUR --> to_currency
-      const result = _carry({
-        units: euros.units * data[request.to_code],
-        nanos: euros.nanos * data[request.to_code]
-      });
-
-      result.units = Math.floor(result.units);
-      result.nanos = Math.floor(result.nanos);
-      result.currency_code = request.to_code;
-
-      logger.info(`conversion request successful`);
-      callback(null, result);
-    });
-  } catch (err) {
-    logger.error(`conversion request failed: ${err}`);
-    callback(err.message);
-  }
+    } catch (err) {
+      logger.error(`conversion request failed: ${err}`);
+      callback(err.message);
+    }
+  });
 }
 
 /**
  * Endpoint for health checks
  */
 function check (call, callback) {
-  callback(null, { status: 'SERVING' });
+  newrelic.startWebTransaction('Check', function() {
+    callback(null, { status: 'SERVING' });
+  });
 }
 
 /**
