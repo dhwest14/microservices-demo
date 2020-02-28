@@ -57,6 +57,10 @@
   name = "google.golang.org/grpc"
   version = "1.17.0"
 
+[[constraint]]
+  name = "github.com/newrelic/go-agent"
+  version = "3.3.0"
+
 [prune]
   go-tests = true
   unused-packages = true
