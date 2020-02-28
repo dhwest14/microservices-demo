@@ -28,6 +28,22 @@ products = [
     'LS4PSXUNUM',
     'OLJCESPC7Z']
 
+emails = [
+    'jon@somewhere.com',
+    'leo@otherwhere.com',
+    'maria@there.com',
+    'jose@some.com'
+]
+
+cities = [
+    'San Diego',
+    'San Francisco',
+    'Santa Barbara',
+    'Oakland',
+    'Irvine',
+    'Santa Monica'
+]
+
 def index(l):
     l.client.get("/")
 
@@ -52,10 +68,10 @@ def addToCart(l):
 def checkout(l):
     addToCart(l)
     l.client.post("/cart/checkout", {
-        'email': 'someone@example.com',
+        'email': random.choice(emails),
         'street_address': '1600 Amphitheatre Parkway',
         'zip_code': '94043',
-        'city': 'Mountain View',
+        'city': random.choice(cities),
         'state': 'CA',
         'country': 'United States',
         'credit_card_number': '4432-8015-6152-0454',
