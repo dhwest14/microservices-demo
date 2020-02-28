@@ -15,6 +15,7 @@
 package main
 
 import (
+	"github.com/newrelic/go-agent/v3/newrelic"
 	"context"
 	"fmt"
 	"html/template"
@@ -145,6 +146,8 @@ func (fe *frontendServer) productHandler(w http.ResponseWriter, r *http.Request)
 }
 
 func (fe *frontendServer) addToCartHandler(w http.ResponseWriter, r *http.Request) {
+	txn := newrelic.FromContext(r.Context())
+	defer txn.StartSegment("addToCartHandler").End()
 	log := r.Context().Value(ctxKeyLog{}).(logrus.FieldLogger)
 	quantity, _ := strconv.ParseUint(r.FormValue("quantity"), 10, 32)
 	productID := r.FormValue("product_id")
@@ -159,6 +162,9 @@ func (fe *frontendServer) addToCartHandler(w http.ResponseWriter, r *http.Reques
 		renderHTTPError(log, r, w, errors.Wrap(err, "could not retrieve product"), http.StatusInternalServerError)
 		return
 	}
+	txn.AddAttribute("product", productID)
+	txn.AddAttribute("quantity", quantity)
+	txn.AddAttribute("productCost", p.GetPriceUsd().GetUnits())
 
 	if err := fe.insertCart(r.Context(), sessionID(r), p.GetId(), int32(quantity)); err != nil {
 		renderHTTPError(log, r, w, errors.Wrap(err, "failed to add to cart"), http.StatusInternalServerError)
@@ -169,6 +175,8 @@ func (fe *frontendServer) addToCartHandler(w http.ResponseWriter, r *http.Reques
 }
 
 func (fe *frontendServer) emptyCartHandler(w http.ResponseWriter, r *http.Request) {
+	txn := newrelic.FromContext(r.Context())
+	defer txn.StartSegment("emptyCartHandler").End()
 	log := r.Context().Value(ctxKeyLog{}).(logrus.FieldLogger)
 	log.Debug("emptying cart")
 
@@ -181,6 +189,8 @@ func (fe *frontendServer) emptyCartHandler(w http.ResponseWriter, r *http.Reques
 }
 
 func (fe *frontendServer) viewCartHandler(w http.ResponseWriter, r *http.Request) {
+	txn := newrelic.FromContext(r.Context())
+	defer txn.StartSegment("viewCartHandler").End()
 	log := r.Context().Value(ctxKeyLog{}).(logrus.FieldLogger)
 	log.Debug("view user cart")
 	currencies, err := fe.getCurrencies(r.Context())
@@ -252,6 +262,8 @@ func (fe *frontendServer) viewCartHandler(w http.ResponseWriter, r *http.Request
 }
 
 func (fe *frontendServer) placeOrderHandler(w http.ResponseWriter, r *http.Request) {
+	txn := newrelic.FromContext(r.Context())
+	defer txn.StartSegment("placeOrderHandler").End()
 	log := r.Context().Value(ctxKeyLog{}).(logrus.FieldLogger)
 	log.Debug("placing order")
 
@@ -294,11 +306,31 @@ func (fe *frontendServer) placeOrderHandler(w http.ResponseWriter, r *http.Reque
 	order.GetOrder().GetItems()
 	recommendations, _ := fe.getRecommendations(r.Context(), sessionID(r), nil)
 
-	totalPaid := *order.GetOrder().GetShippingCost()
+	shippingCost := *order.GetOrder().GetShippingCost()
+	productCost := pb.Money{CurrencyCode: currentCurrency(r)}
 	for _, v := range order.GetOrder().GetItems() {
-		totalPaid = money.Must(money.Sum(totalPaid, *v.GetCost()))
+		txn.Application().RecordCustomEvent(
+			"CartItems", 
+			map[string]interface{}{
+				"email": email,
+				"city": city,
+				"state": state,
+				"country": country,
+				"product": v.GetItem().GetProductId(),
+				"quantity": v.GetItem().GetQuantity(),
+				"productCost": v.GetCost().GetUnits()})
+		productCost = money.Must(money.Sum(productCost, *v.GetCost()))
 	}
-
+	totalPaid := money.Must(money.Sum(productCost, shippingCost))
+	txn.AddAttribute("email", email)
+	txn.AddAttribute("city", city)
+	txn.AddAttribute("state", state)
+	txn.AddAttribute("country", country)
+	txn.AddAttribute("shippingCost", shippingCost.GetUnits())
+	txn.AddAttribute("productCost", productCost.GetUnits())
+	txn.AddAttribute("totalCost", totalPaid.GetUnits())
+	txn.AddAttribute("currency", currentCurrency(r))
+	
 	if err := templates.ExecuteTemplate(w, "order", map[string]interface{}{
 		"session_id":      sessionID(r),
 		"request_id":      r.Context().Value(ctxKeyRequestID{}),
@@ -312,6 +344,8 @@ func (fe *frontendServer) placeOrderHandler(w http.ResponseWriter, r *http.Reque
 }
 
 func (fe *frontendServer) logoutHandler(w http.ResponseWriter, r *http.Request) {
+	txn := newrelic.FromContext(r.Context())
+	defer txn.StartSegment("logoutHandler").End()
 	log := r.Context().Value(ctxKeyLog{}).(logrus.FieldLogger)
 	log.Debug("logging out")
 	for _, c := range r.Cookies() {
@@ -324,6 +358,8 @@ func (fe *frontendServer) logoutHandler(w http.ResponseWriter, r *http.Request) 
 }
 
 func (fe *frontendServer) setCurrencyHandler(w http.ResponseWriter, r *http.Request) {
+	txn := newrelic.FromContext(r.Context())
+	defer txn.StartSegment("setCurrencyHandler").End()
 	log := r.Context().Value(ctxKeyLog{}).(logrus.FieldLogger)
 	cur := r.FormValue("currency_code")
 	log.WithField("curr.new", cur).WithField("curr.old", currentCurrency(r)).
