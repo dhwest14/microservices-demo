@@ -12,6 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+const newrelic = require('newrelic');
+
 const cardValidator = require('simple-card-validator');
 const uuid = require('uuid/v4');
 const pino = require('pino');
@@ -79,5 +81,11 @@ module.exports = function charge (request) {
   logger.info(`Transaction processed: ${cardType} ending ${cardNumber.substr(-4)} \
     Amount: ${amount.currency_code}${amount.units}.${amount.nanos}`);
 
+  // sample business data collected with New Relic API
+  newrelic.addCustomAttributes({
+      'currency': amount.currency_code,
+      'cardType': cardType,
+      'amount': amount.units
+  });
   return { transaction_id: uuid() };
 };
