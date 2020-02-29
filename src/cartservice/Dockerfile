@@ -22,7 +22,19 @@ RUN apk add --no-cache \
     libgcc \
     libstdc++ \
     libintl \
-    icu
+    icu \
+    curl
+
+# New Relic APM Agent
+ARG AGENT_URL=https://download.newrelic.com/dot_net_agent/latest_release/newrelic-netcore20-agent_8.24.244.0_amd64.tar.gz
+ENV CORECLR_ENABLE_PROFILING=1 \
+CORECLR_PROFILER={36032161-FFC0-4B61-B559-F6C5D41BAE5A} \
+CORECLR_NEWRELIC_HOME=/opt/newrelic-netcore20-agent \
+CORECLR_PROFILER_PATH=/opt/newrelic-netcore20-agent/libNewRelicProfiler.so
+RUN mkdir -p /opt/newrelic-netcore20-agent
+RUN cd /opt/newrelic-netcore20-agent
+RUN curl -s "${AGENT_URL}" | gzip -dc | tar xf -
+
 WORKDIR /app
 COPY --from=builder /cartservice .
 ENTRYPOINT ["./cartservice", "start"]
